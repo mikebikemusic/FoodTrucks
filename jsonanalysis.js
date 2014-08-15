@@ -2,11 +2,31 @@ var json = {"metadata":{"ads":[{"banner":{"identifier":"the-kaboom-box","image_u
 
 	//console.log(json);
 
+	var now = Math.floor((new Date()).getTime() / 1000);
 	var theTrucks = json.vendors;
 	for (var key1 in theTrucks) {
 		var theTruck = theTrucks[key1];
 		if (theTruck.open.length > 0) {
 			var opens = theTruck.open;
-			console.log(theTruck.name); // cool! The Truck names are already alphabetical order
+			//console.log(theTruck.name); // cool! The Truck names are already alphabetical order
+			for (var key2 in opens) {
+				var open = opens[key2];
+				if (open.start < now && open.end > now) {
+					var details = "";
+					if (theTruck.phone !== null)
+						details += theTruck.phone + "\n";
+					if (theTruck.description_short !== null)
+						details += theTruck.description_short + "\n";
+					if (theTruck.email !== null)
+						details += theTruck.email + "\n";
+					if (theTruck.description !== null)
+						details += theTruck.description + "\n";
+					if (theTruck.url !== null)
+						details += theTruck.url + "\n";
+					if (theTruck.twitter !== null)
+						details += "@" + theTruck.twitter;
+					console.log(theTruck.name + "\n" + open.display + "\n" +  open.end + "\n" +  details + "\n");
+				}
+			}
 		}
 	}
