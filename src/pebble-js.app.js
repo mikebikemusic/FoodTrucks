@@ -1,0 +1,2 @@
+Pebble.addEventListener("ready", function() {
+});
