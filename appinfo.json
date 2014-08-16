@@ -1,5 +1,12 @@
 {
-    "appKeys": {},
+    "appKeys": {
+        "count": 0,
+        "details": 5,
+        "endtime": 4,
+        "index": 1,
+        "subtitle": 3,
+        "title": 2
+    },
     "capabilities": [
         "configurable"
     ],
