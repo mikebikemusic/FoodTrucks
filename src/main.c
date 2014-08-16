@@ -1,7 +1,7 @@
 #include <pebble.h>
 
 #define dbg true
-#define unitTest true
+#define unitTest false
 
 #define MAX_MENU_ITEMS 50
 const int FIRST_DETAIL = 1000;
