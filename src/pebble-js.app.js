@@ -6,7 +6,7 @@ var saveCity = "boston";
 var unitTest = true;
 
 function log(msg) {
-	console.log(msg);
+	//console.log(msg);
 }
 
 function addOpenTruck(name, location) {

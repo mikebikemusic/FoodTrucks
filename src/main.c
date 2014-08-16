@@ -1,7 +1,8 @@
 #include <pebble.h>
 
-#define dbg true
+#define dbg false
 #define unitTest false
+#define msgTest true
 
 #define MAX_MENU_ITEMS 50
 const int FIRST_DETAIL = 1000;
@@ -28,6 +29,17 @@ int menuItemSet;
 
 static void fetch_msg(int index) {
 	fetched = index;
+#if !unitTest
+	if(msgTest)APP_LOG(APP_LOG_LEVEL_DEBUG,"fetch_msg start %d", index);
+	if(msgTest)psleep(100);
+	DictionaryIterator *iter;
+	app_message_outbox_begin(&iter);
+	if (iter == NULL)
+		return;
+	dict_write_uint8(iter, KEY_INDEX, index);
+	app_message_outbox_send();
+	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"fetch_msg requesting %d of %d", index, truckCount);
+#endif
 }
 
 static void menu_select_callback(int index, void *ctx) {
@@ -44,6 +56,7 @@ static void create_menu() {
 }
 
 static void build_menu(int count) {
+	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"build_menu with %d itmes", count);
 	truckCount = count;
 	remove_menu();
 	if (truckCount > 0) {
@@ -58,12 +71,21 @@ static void build_menu(int count) {
 
 static void set_menu_item(int index, char *ttl, char *sub) {
 	menuItemSet = index;
-	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "set_menu_item %d, %s, %s", index, ttl, sub);
+#if msgTest
+	snprintf(announcement, sizeof(announcement), "Received %d: %s, %s", index, ttl, sub);
+	text_layer_set_text(text_layer, announcement);
+#endif
 	strcpy(title[index], ttl);
 	strcpy(subtitle[index], sub);
 	if (index + 1 < truckCount) {
+		fetch_msg(index + 1); // ask for next truck
+	}	
+#if msgTest
+	// Stress test infinite loop. Sending the truck count causes the JS to rebuild the truck list and re-send the count.
+	if (index + 1 == truckCount) {
 		fetch_msg(index + 1);
 	}	
+#endif
 }
 
 static void announce() {
@@ -73,6 +95,58 @@ static void announce() {
 		title[selected], time_text, subtitle[selected], details);
 	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "announcement: %s", announcement);
 }
+
+static void in_received_handler(DictionaryIterator *iter, void *context) {
+	static char title[40];
+	static char subtitle[80];
+	int index = -1;
+	Tuple *tuple;
+
+	tuple = dict_read_first(iter);
+	while (tuple != NULL) {
+		if (tuple->type == TUPLE_CSTRING) {
+			if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"in_received_handler string key %ld: %s", tuple->key, tuple->value->cstring);
+			switch (tuple->key) {
+				case KEY_TITLE:
+					strcpy(title, tuple->value->cstring);
+					break;
+				case KEY_SUBTITLE:
+					strcpy(subtitle, tuple->value->cstring);
+					break;
+				default:
+					break;
+			}
+		} else if (tuple->type == TUPLE_INT) {
+			if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"in_received_handler int key %ld = %ld", tuple->key, tuple->value->int32);
+			switch (tuple->key) {
+				case KEY_COUNT:
+					build_menu(tuple->value->int32);
+					break;
+				case KEY_INDEX:
+					index = tuple->value->int32;
+					break;
+				default:
+					break;
+			}
+		} else {
+			if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"in_received_handler key %ld type %d", tuple->key, tuple->type);
+		}
+		tuple = dict_read_next(iter);
+	}
+	if (index >= 0) {
+		set_menu_item(index, title, subtitle);
+	}
+}
+
+static void in_dropped_handler(AppMessageResult reason, void *context) {
+	int max = app_message_inbox_size_maximum();
+	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Dropped! %d, max=%d", reason, max);
+}
+
+static void out_failed_handler(DictionaryIterator *failed, AppMessageResult reason, void *context) {
+	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Failed to Send!");
+}
+
 
 #if unitTest
 static int passCount;
@@ -116,7 +190,7 @@ static void test_in_received_handler(int key, int value, char* str) {
 			break;
 	}
 	if (index >= 0) {
-		set_menu_item(value, title, subtitle);
+		set_menu_item(index, title, subtitle);
 	}
 	if (endTime > 0) {
 		announce();
@@ -205,6 +279,13 @@ static void handle_init(void) {
 		.unload = menuWindow_unload,
 	});
 	window_stack_push(menuWindow, animated);
+	
+	app_message_register_inbox_received(in_received_handler);
+	app_message_register_inbox_dropped(in_dropped_handler);
+	app_message_register_outbox_failed(out_failed_handler);
+	const uint32_t inbound_size = app_message_inbox_size_maximum();
+	const uint32_t outbound_size = app_message_outbox_size_maximum();
+	app_message_open(inbound_size, outbound_size);
 }
 
 static void handle_deinit(void) {
