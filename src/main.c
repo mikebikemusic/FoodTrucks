@@ -1,11 +1,13 @@
 #include <pebble.h>
 
-#define dbg false
+#define dbg true
 #define unitTest false
-#define msgTest true
+#define msgTest false
 
 #define MAX_MENU_ITEMS 50
+#define MAX_ANNOUNCE 2000
 const int FIRST_DETAIL = 1000;
+const int RETRY_COUNT = 70;
 const bool animated = true;
 static Window *menuWindow;
 static TextLayer *text_layer;
@@ -13,8 +15,13 @@ static TextLayer *text_layer;
 static int truckCount;
 static time_t endTime;
 char details[1000];
-static char announcement[2000];
+static char *announcement;
+static char blank[] = "";
+static char wait[] = "wait";
 
+static SimpleMenuLayer *simple_menu_layer;
+static SimpleMenuSection menu_section;
+static SimpleMenuItem menu_items[MAX_MENU_ITEMS];
 static char title[MAX_MENU_ITEMS][40];
 static char subtitle[MAX_MENU_ITEMS][80];
 static int selected;
@@ -30,13 +37,29 @@ int menuItemSet;
 static void fetch_msg(int index) {
 	fetched = index;
 #if !unitTest
-	if(msgTest)APP_LOG(APP_LOG_LEVEL_DEBUG,"fetch_msg start %d", index);
-	if(msgTest)psleep(100);
+	//if(msgTest)APP_LOG(APP_LOG_LEVEL_DEBUG,"fetch_msg start %d", index);
 	DictionaryIterator *iter;
-	app_message_outbox_begin(&iter);
-	if (iter == NULL)
-		return;
-	dict_write_uint8(iter, KEY_INDEX, index);
+	for (int i = 1; i <= RETRY_COUNT; ++i) {
+		AppMessageResult result = app_message_outbox_begin(&iter);
+		if (result == APP_MSG_OK) 
+			break;
+		if (i == RETRY_COUNT) {
+			if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "app_message_outbox_begin error %d", result);
+			return;
+		}
+		psleep(i);
+	}
+	for (int i = 1; i <= RETRY_COUNT; ++i) {
+		DictionaryResult result = dict_write_int(iter, KEY_INDEX, &index, 2, true);
+		if (result == DICT_OK) 
+			break;
+		if (i == RETRY_COUNT) {
+			if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "dict_write_uint8 error %d", result);
+			return;
+		}
+		psleep(i);
+	}
+	dict_write_end(iter);
 	app_message_outbox_send();
 	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"fetch_msg requesting %d of %d", index, truckCount);
 #endif
@@ -48,10 +71,26 @@ static void menu_select_callback(int index, void *ctx) {
 }
 
 static void remove_menu() {
+	if (simple_menu_layer != NULL) {
+		layer_remove_from_parent(simple_menu_layer_get_layer(simple_menu_layer));
+		simple_menu_layer_destroy(simple_menu_layer);
+		simple_menu_layer = NULL;
+	}
 	menuRemoved = true;
 }
 
 static void create_menu() {
+	text_layer_set_text(text_layer, "");
+	menu_section = (SimpleMenuSection){
+		.num_items = truckCount,
+		.items = menu_items,
+	};
+	Layer *window_layer = window_get_root_layer(menuWindow);
+	GRect bounds = layer_get_frame(window_layer);
+	simple_menu_layer = simple_menu_layer_create(bounds, menuWindow, &menu_section, 1, NULL);
+	layer_add_child(window_layer, simple_menu_layer_get_layer(simple_menu_layer));
+	selected = 0;
+	simple_menu_layer_set_selected_index(simple_menu_layer, selected, true);
 	menuCreated = true;
 }
 
@@ -72,11 +111,17 @@ static void build_menu(int count) {
 static void set_menu_item(int index, char *ttl, char *sub) {
 	menuItemSet = index;
 #if msgTest
-	snprintf(announcement, sizeof(announcement), "Received %d: %s, %s", index, ttl, sub);
+	static char pass;
+	if (index == 0)
+		pass++;
+	snprintf(announcement, MAX_ANNOUNCE, "Pass %d\nReceived %d:\n%s\n%s", pass, index, ttl, sub);
 	text_layer_set_text(text_layer, announcement);
 #endif
 	strcpy(title[index], ttl);
 	strcpy(subtitle[index], sub);
+	if (simple_menu_layer != NULL) {
+		menu_layer_reload_data(simple_menu_layer_get_menu_layer(simple_menu_layer));
+	}
 	if (index + 1 < truckCount) {
 		fetch_msg(index + 1); // ask for next truck
 	}	
@@ -88,13 +133,54 @@ static void set_menu_item(int index, char *ttl, char *sub) {
 #endif
 }
 
+//******** start scroll window code
+
+static Window *scroll_window;
+static ScrollLayer *scroll_layer;
+static TextLayer *scroll_text_layer;
+static const int vert_scroll_text_padding = 4;
+
+static void scroll_window_load(Window *window) {
+	Layer *window_layer = window_get_root_layer(window);
+	GRect scroll_bounds = layer_get_frame(window_layer);
+	scroll_layer = scroll_layer_create(scroll_bounds);
+	scroll_layer_set_click_config_onto_window(scroll_layer, window);
+	
+	GRect max_text_bounds = GRect(0, 0, scroll_bounds.size.w, 3000);
+	scroll_text_layer = text_layer_create(max_text_bounds);
+	text_layer_set_font(scroll_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+	text_layer_set_text(scroll_text_layer, announcement);
+	GSize max_size = text_layer_get_content_size(scroll_text_layer);
+	text_layer_set_size(scroll_text_layer, max_size);
+	scroll_layer_set_content_size(scroll_layer, GSize(scroll_bounds.size.w, max_size.h + vert_scroll_text_padding));
+	scroll_layer_add_child(scroll_layer, text_layer_get_layer(scroll_text_layer));
+	layer_add_child(window_layer, scroll_layer_get_layer(scroll_layer));
+}
+
+static void scroll_window_unload(Window *wind) {
+	text_layer_destroy(scroll_text_layer);
+	scroll_text_layer = NULL;
+	scroll_layer_destroy(scroll_layer);
+	scroll_layer = NULL;
+	window_destroy(wind);
+	scroll_window = NULL;
+}
+
 static void announce() {
 	char time_text[20];
 	strftime(time_text, sizeof(time_text), "%l:%M%P", localtime(&endTime));
-	snprintf(announcement, sizeof(announcement) - 1, "%s\nuntil %s at %s\n%s", 
+	snprintf(announcement, MAX_ANNOUNCE, "%s\nuntil %s at %s\n%s", 
 		title[selected], time_text, subtitle[selected], details);
 	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "announcement: %s", announcement);
+	scroll_window = window_create();
+	window_set_window_handlers(scroll_window, (WindowHandlers) {
+    	.load = scroll_window_load,
+		.unload = scroll_window_unload,
+	});
+ 	window_stack_push(scroll_window, animated);
 }
+
+//******** end scroll window code
 
 static void in_received_handler(DictionaryIterator *iter, void *context) {
 	static char title[40];
@@ -105,7 +191,7 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
 	tuple = dict_read_first(iter);
 	while (tuple != NULL) {
 		if (tuple->type == TUPLE_CSTRING) {
-			if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"in_received_handler string key %ld: %s", tuple->key, tuple->value->cstring);
+			//if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"in_received_handler string key %ld: %s", tuple->key, tuple->value->cstring);
 			switch (tuple->key) {
 				case KEY_TITLE:
 					strcpy(title, tuple->value->cstring);
@@ -113,17 +199,23 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
 				case KEY_SUBTITLE:
 					strcpy(subtitle, tuple->value->cstring);
 					break;
+				case KEY_DETAILS:
+					strcpy(details, tuple->value->cstring);
+					break;
 				default:
 					break;
 			}
 		} else if (tuple->type == TUPLE_INT) {
-			if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"in_received_handler int key %ld = %ld", tuple->key, tuple->value->int32);
+			//if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"in_received_handler int key %ld = %ld", tuple->key, tuple->value->int32);
 			switch (tuple->key) {
 				case KEY_COUNT:
 					build_menu(tuple->value->int32);
 					break;
 				case KEY_INDEX:
 					index = tuple->value->int32;
+					break;
+				case KEY_ENDTIME:
+					endTime = tuple->value->int32;
 					break;
 				default:
 					break;
@@ -135,6 +227,9 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
 	}
 	if (index >= 0) {
 		set_menu_item(index, title, subtitle);
+	}
+	if (endTime > 0 && simple_menu_layer != NULL) {
+		announce();
 	}
 }
 
@@ -269,10 +364,21 @@ static void menuWindow_load(Window *menuWindow) {
 }
 
 static void menuWindow_unload(Window *window) {
+	layer_remove_from_parent(text_layer_get_layer(text_layer));
 	text_layer_destroy(text_layer);
 }
 
 static void handle_init(void) {
+	announcement = malloc(MAX_ANNOUNCE + 1);
+	for (int i = 0; i < MAX_MENU_ITEMS; i++) {
+		strcpy(title[i], blank);
+		strcpy(subtitle[i], wait);
+		menu_items[i] = (SimpleMenuItem){
+			.title = title[i],
+			.subtitle = subtitle[i],
+    		.callback = menu_select_callback,
+		};
+	}
 	menuWindow = window_create();
 	window_set_window_handlers(menuWindow, (WindowHandlers) {
 		.load = menuWindow_load,
@@ -289,6 +395,9 @@ static void handle_init(void) {
 }
 
 static void handle_deinit(void) {
+	free(announcement);
+	app_message_deregister_callbacks();
+	remove_menu();
 	window_destroy(menuWindow);
 }
 
