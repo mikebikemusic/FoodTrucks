@@ -8,7 +8,7 @@ var index;
 var now;
 var offset;
 var saveCity = "boston";
-var unitTest = true;
+var unitTest = false;
 
 function log(msg) {
 	//console.log(msg);
@@ -45,9 +45,48 @@ function sendToPebble(which) {
 	Pebble.sendAppMessage(msg);
 }
 
+function scanJSON(json) {
+	var theTrucks = json.vendors;
+	for (var key1 in theTrucks) {
+		var theTruck = theTrucks[key1];
+		if (theTruck.open.length > 0) {
+			var opens = theTruck.open;
+			for (var key2 in opens) {
+				var open = opens[key2];
+				if (open.start < now && open.end > now) {
+					var details = "";
+					if (theTruck.phone !== null)
+						details += theTruck.phone + "\n";
+					if (theTruck.description_short !== null)
+						details += theTruck.description_short + "\n";
+					if (theTruck.email !== null)
+						details += theTruck.email + "\n";
+					if (theTruck.description !== null)
+						details += theTruck.description + "\n";
+					if (theTruck.url !== null)
+						details += theTruck.url + "\n";
+					if (theTruck.twitter !== null)
+						details += "@" + theTruck.twitter;
+					addOpenTruck(theTruck.name, open.display, open.end, details);
+				}
+			}
+		}
+	}
+	sendToPebble(activeTrucks.length);
+}
+
 function requestSceduleFor(city) {
 	log ("scheduleRequest " + city);
-	// where the real lookup will go
+	var request = new XMLHttpRequest();
+	request.open('GET', "http://data.streetfoodapp.com/1.1/schedule/" + city + "/", true);
+	request.setRequestHeader('User-Agent', 'PEBBLEMIKE');
+	request.onreadystatechange = function(){
+		log(request.readyState + ", " + request.status);
+		if(request.readyState == 4 && request.status == 200){
+			scanJSON(JSON.parse(request.responseText));
+		}
+	};
+	request.send();
 }
 
 function testRequestSceduleFor(city) {

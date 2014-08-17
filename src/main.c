@@ -1,6 +1,6 @@
 #include <pebble.h>
 
-#define dbg true
+#define dbg false
 #define unitTest false
 #define msgTest false
 
