@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="description" content="Food Trucks" />
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="http://code.jquery.com/mobile/1.3.2/jquery.mobile-1.3.2.min.css" />
+    <script src="http://code.jquery.com/jquery-1.9.1.min.js"></script>
+    <script src="http://code.jquery.com/mobile/1.3.2/jquery.mobile-1.3.2.min.js"></script>
+    <script src="foodtrucks.js"></script>
+	<title>Food Trucks</title>
+</head>
+<body>
+    <div data-role="page" id="main">
+		<div data-role="header" class="jqm-header">
+			<h1>Food Trucks</h1>
+		</div>
+		<div data-role="content">
+  
+			<div data-role="fieldcontain">
+				<select name="selectCity" id="selectCity" data-theme="b" data-mini="true">
+					<option value="boston">Boston</option>
+					<option value="calgary">Calgary</option>
+					<option value="edmonton">Edmonton</option>
+					<option value="halifax">Halifax</option>
+					<option value="ottawa">Ottawa</option>
+					<option value="tallahassee">Tallahassee</option>
+					<option value="toronto">Toronto</option>
+					<option value="vancouver">Vancouver</option>
+					<option value="victoria">Victoria</option>
+				</select>
+			</div>
+
+			<div class="ui-body ui-body-b">
+				<fieldset class="ui-grid-a">
+					<div class="ui-block-a"><button type="submit"  data-mini=true data-theme="d" id="b-cancel">Cancel</button></div>
+					<div class="ui-block-b"><button type="submit"  data-mini=true data-theme="a" id="b-submit">Submit</button></div>
+				</fieldset>
+			</div>
+		</div>
+	</div>
+</body>
+</html>
