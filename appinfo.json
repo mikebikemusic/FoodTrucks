@@ -19,7 +19,7 @@
     "shortName": "Food Trucks",
     "uuid": "19177e4b-72d9-4b0c-b9d3-497c77488971",
     "versionCode": 1,
-    "versionLabel": "1.0",
+    "versionLabel": "0.1",
     "watchapp": {
         "watchface": false
     }

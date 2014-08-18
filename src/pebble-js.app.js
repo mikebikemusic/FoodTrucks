@@ -7,6 +7,7 @@ var activeTruckDetails;
 var index;
 var now;
 var offset;
+var version = "foodtrucks.v1";
 var saveCity = "boston";
 var unitTest = false;
 
@@ -112,7 +113,27 @@ function lookupCity(city) {
 }
 
 Pebble.addEventListener("ready", function() {
+	if (localStorage[version + ".city"] !== null) {
+		saveCity = localStorage[version + ".city"];
+	}
 	lookupCity(saveCity);
+});
+
+Pebble.addEventListener("showConfiguration", function() {
+	var url = 'http://pebblemike.com/foodtrucks/';
+	log("showing " + url);
+	Pebble.openURL(url);
+});
+
+Pebble.addEventListener("webviewclosed", function(e) {
+	log("configuration closed");
+	// webview closed
+	if (e.response !== undefined && e.response !== "") {
+		var options = JSON.parse(decodeURIComponent(e.response));
+		log("Options = " + JSON.stringify(options));
+		localStorage[version + ".city"] = options.city;
+		lookupCity(options.city);
+	}
 });
 
 // Set callback for appmessage events
