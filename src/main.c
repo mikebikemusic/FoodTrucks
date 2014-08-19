@@ -81,6 +81,10 @@ static void remove_menu() {
 
 static void create_menu() {
 	text_layer_set_text(text_layer, "");
+	for (int i = 0; i < truckCount; i++) { // 0.2 City switching: city 1 has trucks, city 2 no trucks, city 3 has trucks, briefly saw city 1's trucks.
+		strcpy(title[i], blank);
+		strcpy(subtitle[i], wait);
+	}
 	menu_section = (SimpleMenuSection){
 		.num_items = truckCount,
 		.items = menu_items,
@@ -139,31 +143,50 @@ static Window *scroll_window;
 static ScrollLayer *scroll_layer;
 static TextLayer *scroll_text_layer;
 static const int vert_scroll_text_padding = 4;
+static GRect scroll_bounds;
+bool announcing;
 
-static void scroll_window_load(Window *window) {
-	Layer *window_layer = window_get_root_layer(window);
-	GRect scroll_bounds = layer_get_frame(window_layer);
-	scroll_layer = scroll_layer_create(scroll_bounds);
-	scroll_layer_set_click_config_onto_window(scroll_layer, window);
-	
-	GRect max_text_bounds = GRect(0, 0, scroll_bounds.size.w, 3000);
-	scroll_text_layer = text_layer_create(max_text_bounds);
-	text_layer_set_font(scroll_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+void update_announcement() {
 	text_layer_set_text(scroll_text_layer, announcement);
 	GSize max_size = text_layer_get_content_size(scroll_text_layer);
 	text_layer_set_size(scroll_text_layer, max_size);
 	scroll_layer_set_content_size(scroll_layer, GSize(scroll_bounds.size.w, max_size.h + vert_scroll_text_padding));
+	scroll_layer_set_content_offset(scroll_layer, GPointZero, !animated); // 0.2 Returning to scrolled details did not go back to top
+}
+
+static void scroll_window_load(Window *window) {
+	announcing = true;
+}
+
+static void scroll_window_unload(Window *wind) {
+	announcing = false;
+}
+
+static void scroll_window_create(Window *window) {
+	announcement = malloc(MAX_ANNOUNCE + 1);
+	scroll_window = window_create();
+	window_set_window_handlers(scroll_window, (WindowHandlers) {
+    		.load = scroll_window_load,
+		.unload = scroll_window_unload,
+	});	
+
+	Layer *window_layer = window_get_root_layer(scroll_window);
+	scroll_bounds = layer_get_frame(window_layer);
+	scroll_layer = scroll_layer_create(scroll_bounds);
+	scroll_layer_set_click_config_onto_window(scroll_layer, scroll_window);
+	
+	GRect max_text_bounds = GRect(0, 0, scroll_bounds.size.w, 3000);
+	scroll_text_layer = text_layer_create(max_text_bounds);
+	text_layer_set_font(scroll_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
 	scroll_layer_add_child(scroll_layer, text_layer_get_layer(scroll_text_layer));
 	layer_add_child(window_layer, scroll_layer_get_layer(scroll_layer));
 }
 
-static void scroll_window_unload(Window *wind) {
+static void scroll_window_destroy() {	
 	text_layer_destroy(scroll_text_layer);
-	scroll_text_layer = NULL;
 	scroll_layer_destroy(scroll_layer);
-	scroll_layer = NULL;
-	window_destroy(wind);
-	scroll_window = NULL;
+	window_destroy(scroll_window);
+	free(announcement);
 }
 
 static void announce() {
@@ -172,12 +195,10 @@ static void announce() {
 	snprintf(announcement, MAX_ANNOUNCE, "%s\nuntil %s at %s\n%s", 
 		title[selected], time_text, subtitle[selected], details);
 	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "announcement: %s", announcement);
-	scroll_window = window_create();
-	window_set_window_handlers(scroll_window, (WindowHandlers) {
-    	.load = scroll_window_load,
-		.unload = scroll_window_unload,
-	});
- 	window_stack_push(scroll_window, animated);
+	if (!announcing) { // 0.2 prevents rapid press of select from creating multiple scroll windows
+ 		window_stack_push(scroll_window, animated);
+	}
+	update_announcement();
 }
 
 //******** end scroll window code
@@ -188,6 +209,7 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
 	int index = -1;
 	Tuple *tuple;
 
+	endTime = 0;
 	tuple = dict_read_first(iter);
 	while (tuple != NULL) {
 		if (tuple->type == TUPLE_CSTRING) {
@@ -209,6 +231,9 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
 			//if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"in_received_handler int key %ld = %ld", tuple->key, tuple->value->int32);
 			switch (tuple->key) {
 				case KEY_COUNT:
+					if (announcing) { // 0.2 scroll window was not getting freed when selecting a different city
+						window_stack_pop(true);						
+					}
 					build_menu(tuple->value->int32);
 					break;
 				case KEY_INDEX:
@@ -355,7 +380,8 @@ static void menuWindow_load(Window *menuWindow) {
 	Layer *window_layer = window_get_root_layer(menuWindow);
 	GRect bounds = layer_get_frame(window_layer);
 	text_layer = text_layer_create(bounds);
-	text_layer_set_text(text_layer, "Food Trucks test. Waiting for javascript.");
+	// 0.2 replace test message with final messaging
+	text_layer_set_text(text_layer, "If you don't see the food truck list in a few seconds, please start your Pebble App from your phone.");
 	text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
 	layer_add_child(window_layer, text_layer_get_layer(text_layer));
 #if unitTest
@@ -364,12 +390,19 @@ static void menuWindow_load(Window *menuWindow) {
 }
 
 static void menuWindow_unload(Window *window) {
+	remove_menu();
 	layer_remove_from_parent(text_layer_get_layer(text_layer));
 	text_layer_destroy(text_layer);
 }
 
 static void handle_init(void) {
-	announcement = malloc(MAX_ANNOUNCE + 1);
+	app_message_register_inbox_received(in_received_handler);
+	app_message_register_inbox_dropped(in_dropped_handler);
+	app_message_register_outbox_failed(out_failed_handler);
+	const uint32_t inbound_size = app_message_inbox_size_maximum();
+	const uint32_t outbound_size = app_message_outbox_size_maximum();
+	app_message_open(inbound_size, outbound_size);
+
 	for (int i = 0; i < MAX_MENU_ITEMS; i++) {
 		strcpy(title[i], blank);
 		strcpy(subtitle[i], wait);
@@ -386,16 +419,11 @@ static void handle_init(void) {
 	});
 	window_stack_push(menuWindow, animated);
 	
-	app_message_register_inbox_received(in_received_handler);
-	app_message_register_inbox_dropped(in_dropped_handler);
-	app_message_register_outbox_failed(out_failed_handler);
-	const uint32_t inbound_size = app_message_inbox_size_maximum();
-	const uint32_t outbound_size = app_message_outbox_size_maximum();
-	app_message_open(inbound_size, outbound_size);
+	scroll_window_create(menuWindow);
 }
 
 static void handle_deinit(void) {
-	free(announcement);
+	scroll_window_destroy();
 	app_message_deregister_callbacks();
 	remove_menu();
 	window_destroy(menuWindow);
