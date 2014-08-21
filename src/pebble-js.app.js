@@ -9,7 +9,7 @@ var now;
 var offset;
 var version = "foodtrucks.v1";
 var saveCity = "boston";
-var unitTest = false;
+var unitTest = true;
 
 function log(msg) {
 	//console.log(msg);
@@ -28,7 +28,7 @@ function addOpenTruck(name, location, endtime, details) {
 	activeTruckDetails[len] = 
 		{
 		'endtime' : endtime - offset,
-		'details' : details
+		'details' : details.substring(0, 2000), // Limit to what we can send
 		};
 	index++;
 }
@@ -92,8 +92,103 @@ function requestSceduleFor(city) {
 
 function testRequestSceduleFor(city) {
 	log ("testRequestSceduleFor " + city);
-	for (var i = 0; i < 30; i++) {
-		addOpenTruck (city + " " + i, "location " + i, now + i * 600, "Details " + i + "\nLine 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10\nLine 11");
+	var i;
+	switch (city) {
+		case "boston": // typical count
+			for (i = 0; i < 30; i++) {
+				addOpenTruck (city + " " + i, "location " + i, now + i * 600, "Details " + i + 
+					"\nLine 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10\nLine 11");
+			}
+			break;
+		case "calgary": // count = 0
+			break;
+		case "edmonton": // count = 1 and long details
+			addOpenTruck (city, 
+				"location ", now + 600, "Details " + 
+					"\nLine 1 is not so long." + 
+					"\nLine 2 is much longer than one before it but not as long as the one to follow." + 
+					"\nLine 3 is much longer than one before it but not as long as the one to follow because it repeats itself once: Line 3 is much longer than one before it but not as long as the one to follow because it repeats itself." + 
+					"\nLine 4 is much longer than one before it but not as long as the one to follow because it repeats itself twice: Line 4 is much longer than one before it but not as long as the one to follow because it repeats itself once more: Line 4 is much longer than one before it but not as long as the one to follow because it repeats itself." +  
+					"\nLine 5 is slightly smaller than the one before it because it repeats itself twice: This line is slightly smaller than the one before it because it repeats itself once more: This line is slightly smaller than the one before it because it repeats itself." +
+					"\nLine 6 is about the same as the one before it because it repeats itself twice: This line is about the same as the one before it because it repeats itself once more: This line is about the same as the one before it because it repeats itself." + 
+					"\nLine 7 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					"\nLine 8 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					//"\nLine 9 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					//"\nLine 10 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					"\nLine 11 is different than the one before it because it is the last one.");
+			break;
+		case "halifax": // count = MAX_MENU_ITEMS and long truck name
+			for (i = 0; i < MAX_MENU_ITEMS; i++) {
+				addOpenTruck (city + " "  + i + " with a very long truck name that needs to be truncated", 
+					"location " + i, now + i * 600, "Details " + i + 
+					"\nLine 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10\nLine 11");
+			}
+			break;
+		case "ottawa": // small count and long location
+			for (i = 0; i < 3 + 1; i++) {
+				addOpenTruck (city + " " + i, 
+					"location " + i + " is so long you might never find this truck because you will get so lost and hungry you will die of starvation before you get there.", 
+					now + i * 600, "Details " + i + 
+					"\nLine 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10\nLine 11");
+			}
+			break;
+		case "tallahassee": // count above MAX_MENU_ITEMS
+			for (i = 0; i < MAX_MENU_ITEMS + 1; i++) {
+				addOpenTruck (city + " " + i, 
+					"location " + i, now + i * 600, "Details " + i + 
+					"\nLine 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10\nLine 11");
+			}
+			break;
+		case "toronto": // count way above MAX_MENU_ITEMS
+			for (i = 0; i < MAX_MENU_ITEMS + 50 + 1; i++) {
+				addOpenTruck (city + " " + i, 
+					"location " + i, now + i * 600, "Details " + i + 
+					"\nLine 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10\nLine 11");
+			}
+			break;
+		case "vancouver": // count = 3 and longer details
+			addOpenTruck (city + " 1", 
+				"location 1", now + 600, "Details " + 
+					"\nLine 1 is not so long." + 
+					"\nLine 2 is much longer than one before it but not as long as the one to follow." + 
+					"\nLine 3 is much longer than one before it but not as long as the one to follow because it repeats itself once: Line 3 is much longer than one before it but not as long as the one to follow because it repeats itself." + 
+					"\nLine 4 is much longer than one before it but not as long as the one to follow because it repeats itself twice: Line 4 is much longer than one before it but not as long as the one to follow because it repeats itself once more: Line 4 is much longer than one before it but not as long as the one to follow because it repeats itself." +  
+					"\nLine 5 is slightly smaller than the one before it because it repeats itself twice: This line is slightly smaller than the one before it because it repeats itself once more: This line is slightly smaller than the one before it because it repeats itself." +
+					"\nLine 6 is about the same as the one before it because it repeats itself twice: This line is about the same as the one before it because it repeats itself once more: This line is about the same as the one before it because it repeats itself." + 
+					"\nLine 7 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					"\nLine 8 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					//"\nLine 9 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					//"\nLine 10 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					"\nLine 11 is different than the one before it because it is the last one.");
+			addOpenTruck (city + " 2", 
+				"location 2", now + 600, "Details " + 
+					"\nLine 1 is not so long." + 
+					"\nLine 2 is much longer than one before it but not as long as the one to follow." + 
+					"\nLine 3 is much longer than one before it but not as long as the one to follow because it repeats itself once: Line 3 is much longer than one before it but not as long as the one to follow because it repeats itself." + 
+					"\nLine 4 is much longer than one before it but not as long as the one to follow because it repeats itself twice: Line 4 is much longer than one before it but not as long as the one to follow because it repeats itself once more: Line 4 is much longer than one before it but not as long as the one to follow because it repeats itself." +  
+					"\nLine 5 is slightly smaller than the one before it because it repeats itself twice: This line is slightly smaller than the one before it because it repeats itself once more: This line is slightly smaller than the one before it because it repeats itself." +
+					"\nLine 6 is about the same as the one before it because it repeats itself twice: This line is about the same as the one before it because it repeats itself once more: This line is about the same as the one before it because it repeats itself." + 
+					"\nLine 7 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					"\nLine 8 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					"\nLine 9 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					//"\nLine 10 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					"\nLine 11 is different than the one before it because it is the last one.");
+			addOpenTruck (city + " 3", 
+				"location 3", now + 600, "Details " + 
+					"\nLine 1 is not so long." + 
+					"\nLine 2 is much longer than one before it but not as long as the one to follow." + 
+					"\nLine 3 is much longer than one before it but not as long as the one to follow because it repeats itself once: Line 3 is much longer than one before it but not as long as the one to follow because it repeats itself." + 
+					"\nLine 4 is much longer than one before it but not as long as the one to follow because it repeats itself twice: Line 4 is much longer than one before it but not as long as the one to follow because it repeats itself once more: Line 4 is much longer than one before it but not as long as the one to follow because it repeats itself." +  
+					"\nLine 5 is slightly smaller than the one before it because it repeats itself twice: This line is slightly smaller than the one before it because it repeats itself once more: This line is slightly smaller than the one before it because it repeats itself." +
+					"\nLine 6 is about the same as the one before it because it repeats itself twice: This line is about the same as the one before it because it repeats itself once more: This line is about the same as the one before it because it repeats itself." + 
+					"\nLine 7 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					"\nLine 8 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					"\nLine 9 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					"\nLine 10 is exactly the same as the one that follows it because it repeats itself twice: This line is exactly the same as the one that follows it because it repeats itself once more: This line is exactly the same as the one that follows it because it repeats itself." + 
+					"\nLine 11 is different than the one before it because it is the last one.");
+			break;
+		default:
+			break;
 	}
 	sendToPebble(activeTrucks.length);
 }
