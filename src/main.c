@@ -4,8 +4,8 @@
 #define unitTest false
 #define msgTest false
 
-#define MAX_MENU_ITEMS 50
-#define MAX_ANNOUNCE 2000
+#define MAX_MENU_ITEMS 100
+#define MAX_ANNOUNCE 2200
 const int FIRST_DETAIL = 1000;
 const int RETRY_COUNT = 70;
 const bool animated = true;
@@ -14,7 +14,7 @@ static TextLayer *text_layer;
 
 static int truckCount;
 static time_t endTime;
-char details[1000];
+static char *details;
 static char *announcement;
 static char blank[] = "";
 static char wait[] = "wait";
@@ -22,8 +22,6 @@ static char wait[] = "wait";
 static SimpleMenuLayer *simple_menu_layer;
 static SimpleMenuSection menu_section;
 static SimpleMenuItem menu_items[MAX_MENU_ITEMS];
-static char title[MAX_MENU_ITEMS][40];
-static char subtitle[MAX_MENU_ITEMS][80];
 static int selected;
 
 enum { KEY_COUNT, KEY_INDEX, KEY_TITLE, KEY_SUBTITLE, KEY_ENDTIME, KEY_DETAILS};
@@ -70,7 +68,20 @@ static void menu_select_callback(int index, void *ctx) {
 	fetch_msg(selected + FIRST_DETAIL);
 }
 
+static void replace_menu_item(void** item, void* str) {
+	if (*item != str) {
+		if (*item != blank && *item != wait) {
+			free(*item);
+		}
+		*item = str;
+	}
+}
+
 static void remove_menu() {
+	for (int i = 0; i < MAX_MENU_ITEMS; i++) {
+		replace_menu_item((void**)&(menu_items[i].title), blank);
+		replace_menu_item((void**)&(menu_items[i].subtitle), wait);
+	}
 	if (simple_menu_layer != NULL) {
 		layer_remove_from_parent(simple_menu_layer_get_layer(simple_menu_layer));
 		simple_menu_layer_destroy(simple_menu_layer);
@@ -81,10 +92,6 @@ static void remove_menu() {
 
 static void create_menu() {
 	text_layer_set_text(text_layer, "");
-	for (int i = 0; i < truckCount; i++) { // 0.2 City switching: city 1 has trucks, city 2 no trucks, city 3 has trucks, briefly saw city 1's trucks.
-		strcpy(title[i], blank);
-		strcpy(subtitle[i], wait);
-	}
 	menu_section = (SimpleMenuSection){
 		.num_items = truckCount,
 		.items = menu_items,
@@ -121,8 +128,8 @@ static void set_menu_item(int index, char *ttl, char *sub) {
 	snprintf(announcement, MAX_ANNOUNCE, "Pass %d\nReceived %d:\n%s\n%s", pass, index, ttl, sub);
 	text_layer_set_text(text_layer, announcement);
 #endif
-	strcpy(title[index], ttl);
-	strcpy(subtitle[index], sub);
+	replace_menu_item((void**)&(menu_items[index].title), ttl);
+	replace_menu_item((void**)&(menu_items[index].subtitle), sub);
 	if (simple_menu_layer != NULL) {
 		menu_layer_reload_data(simple_menu_layer_get_menu_layer(simple_menu_layer));
 	}
@@ -193,7 +200,8 @@ static void announce() {
 	char time_text[20];
 	strftime(time_text, sizeof(time_text), "%l:%M%P", localtime(&endTime));
 	snprintf(announcement, MAX_ANNOUNCE, "%s\nuntil %s at %s\n%s", 
-		title[selected], time_text, subtitle[selected], details);
+		menu_items[selected].title, time_text, menu_items[selected].subtitle, details);
+	free(details);
 	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "announcement: %s", announcement);
 	if (!announcing) { // 0.2 prevents rapid press of select from creating multiple scroll windows
  		window_stack_push(scroll_window, animated);
@@ -204,8 +212,8 @@ static void announce() {
 //******** end scroll window code
 
 static void in_received_handler(DictionaryIterator *iter, void *context) {
-	static char title[40];
-	static char subtitle[80];
+	static char *title;
+	static char *subtitle;
 	int index = -1;
 	Tuple *tuple;
 
@@ -216,12 +224,15 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
 			//if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"in_received_handler string key %ld: %s", tuple->key, tuple->value->cstring);
 			switch (tuple->key) {
 				case KEY_TITLE:
+					title = malloc(strlen(tuple->value->cstring) + 1);
 					strcpy(title, tuple->value->cstring);
 					break;
 				case KEY_SUBTITLE:
+					subtitle = malloc(strlen(tuple->value->cstring) + 1);
 					strcpy(subtitle, tuple->value->cstring);
 					break;
 				case KEY_DETAILS:
+					details = malloc(strlen(tuple->value->cstring) + 1);
 					strcpy(details, tuple->value->cstring);
 					break;
 				default:
@@ -338,8 +349,8 @@ static void test() {
 	test_in_received_handler(KEY_SUBTITLE, 0, "Only Location");
 	test_in_received_handler(KEY_INDEX, 0, NULL);
 	assert(fetched == -1, "F 1 Truck 6\n"); fetched = -1;
-	assert(strcmp(title[menuItemSet], "Only Truck") == 0, "F 1 Truck 7\n");
-	assert(strcmp(subtitle[menuItemSet], "Only Location") == 0, "F 1 Truck 8\n");
+	assert(strcmp(menu_items[menuItemSet].title, "Only Truck") == 0, "F 1 Truck 7\n");
+	assert(strcmp(menu_items[menuItemSet].subtitle, "Only Location") == 0, "F 1 Truck 8\n");
 	
 	test_in_received_handler(KEY_COUNT, 10, NULL);// Test 10 trucks
 	assert(!noTrucks, "F 10 Trucks 1\n"); noTrucks = false;
@@ -356,8 +367,8 @@ static void test() {
 		test_in_received_handler(KEY_SUBTITLE, 0, sub);
 		test_in_received_handler(KEY_INDEX, i, NULL);
 		assert(fetched == (i<9 ? i+1 : -1), "F 10 Trucks 6\n"); fetched = -1;
-		assert(strcmp(title[menuItemSet], ttl) == 0, "F 10 Trucks 7\n");
-		assert(strcmp(subtitle[menuItemSet], sub) == 0, "F 1 0Truck 8\n");
+		assert(strcmp(menu_items[menuItemSet].title, ttl) == 0, "F 10 Trucks 7\n");
+		assert(strcmp(menu_items[menuItemSet].subtitle, sub) == 0, "F 1 0Truck 8\n");
 	}
 	
 	menu_select_callback(4, NULL);
@@ -404,11 +415,9 @@ static void handle_init(void) {
 	app_message_open(inbound_size, outbound_size);
 
 	for (int i = 0; i < MAX_MENU_ITEMS; i++) {
-		strcpy(title[i], blank);
-		strcpy(subtitle[i], wait);
 		menu_items[i] = (SimpleMenuItem){
-			.title = title[i],
-			.subtitle = subtitle[i],
+			.title = blank,
+			.subtitle = wait,
     		.callback = menu_select_callback,
 		};
 	}
