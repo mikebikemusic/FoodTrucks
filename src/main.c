@@ -135,7 +135,7 @@ static void set_menu_item(int index, char *ttl, char *sub) {
 	}
 	if (index + 1 < truckCount) {
 		fetch_msg(index + 1); // ask for next truck
-	}	
+	}
 #if msgTest
 	// Stress test infinite loop. Sending the truck count causes the JS to rebuild the truck list and re-send the count.
 	if (index + 1 == truckCount) {
