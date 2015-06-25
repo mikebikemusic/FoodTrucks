@@ -3,6 +3,8 @@
 #define dbg false
 #define unitTest false
 #define msgTest false
+#define newRetry true
+#define useRetryTimer false
 
 #define MAX_MENU_ITEMS 100
 #define MAX_ANNOUNCE 2200
@@ -31,24 +33,82 @@ int fetched;
 bool menuRemoved;
 bool menuCreated;
 int menuItemSet;
+bool refreshing;
+static AppTimer *retry_timer = NULL;
+static int retryCount = 0;
+static void fetch_msg(int index);
+
+char *translate_error(AppMessageResult result) {
+  switch (result) {
+    case APP_MSG_OK: return "APP_MSG_OK";
+    case APP_MSG_SEND_TIMEOUT: return "APP_MSG_SEND_TIMEOUT";
+    case APP_MSG_SEND_REJECTED: return "APP_MSG_SEND_REJECTED";
+    case APP_MSG_NOT_CONNECTED: return "APP_MSG_NOT_CONNECTED";
+    case APP_MSG_APP_NOT_RUNNING: return "APP_MSG_APP_NOT_RUNNING";
+    case APP_MSG_INVALID_ARGS: return "APP_MSG_INVALID_ARGS";
+    case APP_MSG_BUSY: return "APP_MSG_BUSY";
+    case APP_MSG_BUFFER_OVERFLOW: return "APP_MSG_BUFFER_OVERFLOW";
+    case APP_MSG_ALREADY_RELEASED: return "APP_MSG_ALREADY_RELEASED";
+    case APP_MSG_CALLBACK_ALREADY_REGISTERED: return "APP_MSG_CALLBACK_ALREADY_REGISTERED";
+    case APP_MSG_CALLBACK_NOT_REGISTERED: return "APP_MSG_CALLBACK_NOT_REGISTERED";
+    case APP_MSG_OUT_OF_MEMORY: return "APP_MSG_OUT_OF_MEMORY";
+    case APP_MSG_CLOSED: return "APP_MSG_CLOSED";
+    case APP_MSG_INTERNAL_ERROR: return "APP_MSG_INTERNAL_ERROR";
+    default: return "UNKNOWN ERROR";
+  }
+}
+
+static void retryCallback(void* data) {
+	APP_LOG(APP_LOG_LEVEL_DEBUG, "Retry requesting index %d from timer callback", fetched);
+	fetch_msg(fetched);
+}
+
+static void out_sent_handler(DictionaryIterator *sent, void *context) {
+	APP_LOG(APP_LOG_LEVEL_DEBUG, "out_sent_handler %d was acked", fetched);
+	if (retryCount != 0) {
+		APP_LOG(APP_LOG_LEVEL_DEBUG, "Retry requesting index %d from sent_handler callback", fetched);
+		fetch_msg(fetched);
+	}
+}
 
 static void fetch_msg(int index) {
 	fetched = index;
 #if !unitTest
-	//if(msgTest)APP_LOG(APP_LOG_LEVEL_DEBUG,"fetch_msg start %d", index);
-	DictionaryIterator *iter;
+	DictionaryIterator *iter; // = &dict;
+
 	for (int i = 1; i <= RETRY_COUNT; ++i) {
 		AppMessageResult result = app_message_outbox_begin(&iter);
-		if (result == APP_MSG_OK) 
+		if (result == APP_MSG_OK) {
+			retryCount = 0;
 			break;
+		}
+		// ****** start of new retry logic
+		if (newRetry) {
+			APP_LOG(APP_LOG_LEVEL_DEBUG, "app_message_outbox_begin error %s", translate_error(result));
+			if (retryCount == 0)
+				retryCount = RETRY_COUNT;
+			--retryCount;
+			if (useRetryTimer && retryCount > 1 && retryCount < RETRY_COUNT - 1) {
+				APP_LOG(APP_LOG_LEVEL_DEBUG, "Looks like we still need a timer");
+				retry_timer = app_timer_register(1, retryCallback, NULL);				
+			}
+			return;
+		}
+		// ***** end of new retry logic. Start of old retry logic:
+		if(dbg && i == 1)APP_LOG(APP_LOG_LEVEL_DEBUG, "app_message_outbox_begin error %s", translate_error(result));
+
 		if (i == RETRY_COUNT) {
-			if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "app_message_outbox_begin error %d", result);
+			if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "app_message_outbox_begin error %s", translate_error(result));
 			return;
 		}
 		psleep(i);
 	}
 	for (int i = 1; i <= RETRY_COUNT; ++i) {
-		DictionaryResult result = dict_write_int(iter, KEY_INDEX, &index, 2, true);
+		Tuplet value = TupletInteger(KEY_INDEX, index);
+		DictionaryResult result = dict_write_tuplet(iter, &value);
+
+		//DictionaryResult result = dict_write_int(iter, KEY_INDEX, &index, 2, true);
+
 		if (result == DICT_OK) 
 			break;
 		if (i == RETRY_COUNT) {
@@ -58,14 +118,20 @@ static void fetch_msg(int index) {
 		psleep(i);
 	}
 	dict_write_end(iter);
-	app_message_outbox_send();
+	AppMessageResult result = app_message_outbox_send();
+	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "app_message_outbox_send result = %d", result);
+
 	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"fetch_msg requesting %d of %d", index, truckCount);
 #endif
 }
 
 static void menu_select_callback(int index, void *ctx) {
 	selected = index;	
-	fetch_msg(selected + FIRST_DETAIL);
+	if (strcmp(menu_items[index].subtitle, "wait") == 0) {
+		fetch_msg(selected);
+	} else {
+		fetch_msg(selected + FIRST_DETAIL);
+	}
 }
 
 static void replace_menu_item(void** item, void* str) {
@@ -107,11 +173,16 @@ static void create_menu() {
 
 static void build_menu(int count) {
 	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"build_menu with %d itmes", count);
+	if (truckCount == count) {
+		//app_comm_set_sniff_interval(SNIFF_INTERVAL_REDUCED);
+		fetch_msg(0); // reuse existing menu and ask for first truck
+		return;
+	}
 	truckCount = count;
-	remove_menu();
+	remove_menu();		
 	if (truckCount > 0) {
 		noTrucks = false;
-		create_menu();
+		create_menu();			
 		fetch_msg(0); // ask for first truck
 	} else {
 		noTrucks = true;
@@ -135,7 +206,10 @@ static void set_menu_item(int index, char *ttl, char *sub) {
 	}
 	if (index + 1 < truckCount) {
 		fetch_msg(index + 1); // ask for next truck
-	}	
+	} else {
+		refreshing = false;
+		//app_comm_set_sniff_interval(SNIFF_INTERVAL_NORMAL);
+	}
 #if msgTest
 	// Stress test infinite loop. Sending the truck count causes the JS to rebuild the truck list and re-send the count.
 	if (index + 1 == truckCount) {
@@ -218,6 +292,7 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
 	Tuple *tuple;
 
 	endTime = 0;
+	int count = -1;
 	tuple = dict_read_first(iter);
 	while (tuple != NULL) {
 		if (tuple->type == TUPLE_CSTRING) {
@@ -242,10 +317,12 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
 			//if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"in_received_handler int key %ld = %ld", tuple->key, tuple->value->int32);
 			switch (tuple->key) {
 				case KEY_COUNT:
-					if (announcing) { // 0.2 scroll window was not getting freed when selecting a different city
+					if (announcing && !refreshing) { // 0.2 scroll window was not getting freed when selecting a different city
 						window_stack_pop(true);						
 					}
-					build_menu(tuple->value->int32);
+					count = tuple->value->int32;
+					build_menu(count);		
+					count = -1;
 					break;
 				case KEY_INDEX:
 					index = tuple->value->int32;
@@ -260,6 +337,9 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
 			if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG,"in_received_handler key %ld type %d", tuple->key, tuple->type);
 		}
 		tuple = dict_read_next(iter);
+	}
+	if (count > 0) {
+		build_menu(count);		
 	}
 	if (index >= 0) {
 		set_menu_item(index, title, subtitle);
@@ -277,7 +357,6 @@ static void in_dropped_handler(AppMessageResult reason, void *context) {
 static void out_failed_handler(DictionaryIterator *failed, AppMessageResult reason, void *context) {
 	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Failed to Send!");
 }
-
 
 #if unitTest
 static int passCount;
@@ -387,6 +466,16 @@ static void test() {
 }
 #endif
 
+static void handle_tick(struct tm* now, TimeUnits units_changed){
+ 	// New trucks open typically every half hour. Add 1 minute to allow for js time variation.
+	// Also, avoid the rare time when the tick occurs while creating a menu (fetched is below truckCount)
+	if ((now->tm_min == 0 || now->tm_min == 30) && fetched + 1 >= truckCount) {
+		APP_LOG(APP_LOG_LEVEL_DEBUG, "Half Hour Update");
+		refreshing = true;
+		fetch_msg(-1);
+	}
+}
+
 static void menuWindow_load(Window *menuWindow) {
 	Layer *window_layer = window_get_root_layer(menuWindow);
 	GRect bounds = layer_get_frame(window_layer);
@@ -395,6 +484,7 @@ static void menuWindow_load(Window *menuWindow) {
 	text_layer_set_text(text_layer, "If you don't see the food truck list in a few seconds, please start your Pebble App from your phone.");
 	text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
 	layer_add_child(window_layer, text_layer_get_layer(text_layer));
+	app_comm_set_sniff_interval(SNIFF_INTERVAL_NORMAL);
 #if unitTest
 	test();
 #endif
@@ -410,8 +500,13 @@ static void handle_init(void) {
 	app_message_register_inbox_received(in_received_handler);
 	app_message_register_inbox_dropped(in_dropped_handler);
 	app_message_register_outbox_failed(out_failed_handler);
+	app_message_register_outbox_sent(out_sent_handler);
 	const uint32_t inbound_size = app_message_inbox_size_maximum();
 	const uint32_t outbound_size = app_message_outbox_size_maximum();
+	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "app_message_inbox_size %d", (int)inbound_size);
+
+	if(dbg)APP_LOG(APP_LOG_LEVEL_DEBUG, "app_message_outbox_size %d", (int)outbound_size);
+
 	app_message_open(inbound_size, outbound_size);
 
 	for (int i = 0; i < MAX_MENU_ITEMS; i++) {
@@ -429,9 +524,11 @@ static void handle_init(void) {
 	window_stack_push(menuWindow, animated);
 	
 	scroll_window_create(menuWindow);
+	tick_timer_service_subscribe(MINUTE_UNIT, &handle_tick);
 }
 
 static void handle_deinit(void) {
+  	tick_timer_service_unsubscribe();
 	scroll_window_destroy();
 	app_message_deregister_callbacks();
 	remove_menu();

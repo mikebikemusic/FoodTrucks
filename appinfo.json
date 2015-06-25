@@ -23,6 +23,7 @@
             }
         ]
     },
+    "sdkVersion": "2",
     "shortName": "Food Trucks",
     "uuid": "19177e4b-72d9-4b0c-b9d3-497c77488971",
     "versionCode": 1,

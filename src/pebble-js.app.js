@@ -12,7 +12,7 @@ var saveCity = "boston";
 var unitTest = true;
 
 function log(msg) {
-	//console.log(msg);
+	console.log(msg);
 }
 
 function addOpenTruck(name, location, endtime, details) {
@@ -195,7 +195,7 @@ function testRequestSceduleFor(city) {
 
 function lookupCity(city) {
 	log ("lookupCity " + city);
-	now = Math.floor((new Date()).getTime() / 1000);
+	now = Math.floor((new Date()).getTime() / 1000) + 60; // Round up to the next minute.
 	offset = (new Date()).getTimezoneOffset() * 60;
 	activeTrucks = [];
 	activeTruckDetails = [];
@@ -215,7 +215,7 @@ Pebble.addEventListener("ready", function() {
 });
 
 Pebble.addEventListener("showConfiguration", function() {
-	var url = 'http://pebblemike.com/foodtrucks/';
+	var url = 'http://orologics.com/foodtrucks/';
 	log("showing " + url);
 	Pebble.openURL(url);
 });
@@ -226,13 +226,18 @@ Pebble.addEventListener("webviewclosed", function(e) {
 	if (e.response !== undefined && e.response !== "") {
 		var options = JSON.parse(decodeURIComponent(e.response));
 		log("Options = " + JSON.stringify(options));
-		localStorage[version + ".city"] = options.city;
-		lookupCity(options.city);
+		saveCity = options.city;
+		localStorage[version + ".city"] = saveCity;
+		lookupCity(saveCity);
 	}
 });
 
 // Set callback for appmessage events
 Pebble.addEventListener("appmessage", function(e) {
 	log("message =" + JSON.stringify(e.payload));
-	sendToPebble(e.payload.index);
+	if (e.payload.index >= 0) {
+		sendToPebble(e.payload.index);		
+	} else {
+		lookupCity(saveCity); // Negative index means refresh
+	}
 });
