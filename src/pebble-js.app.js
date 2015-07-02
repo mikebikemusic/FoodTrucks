@@ -10,6 +10,10 @@ var offset;
 var version = "foodtrucks.v1";
 var saveCity = "boston";
 var unitTest = true;
+var waitingForAck = false;
+var waitingForWhich = false;
+var pendingWhich;
+var currentWhich;
 
 function log(msg) {
 	console.log(msg);
@@ -34,6 +38,13 @@ function addOpenTruck(name, location, endtime, details) {
 }
 
 function sendToPebble(which) {
+	if (waitingForAck) {
+		log("Can't send " + which);
+		waitingForWhich = true;
+		pendingWhich = which;
+		return;
+	}
+	currentWhich = which;
 	var msg;
 	var activeTruckData = activeTrucks;
 	var i = which;
@@ -43,7 +54,24 @@ function sendToPebble(which) {
 	}
 	msg =  (i < activeTrucks.length) ? activeTruckData[i] : { 'count': i };
 	log("sending " + which + " of " + activeTrucks.length + ": " + JSON.stringify(msg));
-	Pebble.sendAppMessage(msg);
+	waitingForAck = true;
+	Pebble.sendAppMessage(msg, ackHandler, nackHandler);
+}
+
+function ackHandler() {
+	log("ackHandler");
+	waitingForAck = false;
+	if (waitingForWhich) {
+		log("Retry sending " + pendingWhich);
+		waitingForWhich = false;
+		sendToPebble(pendingWhich);
+	}
+}
+
+function nackHandler() {
+	log("nackHandler resending " + currentWhich);
+	waitingForAck = false;
+	sendToPebble(currentWhich);
 }
 
 function scanJSON(json) {

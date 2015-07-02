@@ -30,6 +30,7 @@ enum { KEY_COUNT, KEY_INDEX, KEY_TITLE, KEY_SUBTITLE, KEY_ENDTIME, KEY_DETAILS};
 
 bool noTrucks;
 int fetched;
+int pending;
 bool menuRemoved;
 bool menuCreated;
 int menuItemSet;
@@ -64,7 +65,7 @@ static void retryCallback(void* data) {
 }
 
 static void out_sent_handler(DictionaryIterator *sent, void *context) {
-	APP_LOG(APP_LOG_LEVEL_DEBUG, "out_sent_handler %d was acked", fetched);
+	APP_LOG(APP_LOG_LEVEL_DEBUG, "out_sent_handler %d was acked", pending);
 	if (retryCount != 0) {
 		APP_LOG(APP_LOG_LEVEL_DEBUG, "Retry requesting index %d from sent_handler callback", fetched);
 		fetch_msg(fetched);
@@ -80,6 +81,7 @@ static void fetch_msg(int index) {
 		AppMessageResult result = app_message_outbox_begin(&iter);
 		if (result == APP_MSG_OK) {
 			retryCount = 0;
+			pending = index;
 			break;
 		}
 		// ****** start of new retry logic
